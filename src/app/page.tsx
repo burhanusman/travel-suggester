@@ -1,44 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
+import { CrowdDataService, DestinationCrowdData } from '../lib/crowdData';
+import LiveCrowdDashboard from '../components/LiveCrowdDashboard';
 
-// Mock data for destinations
-const featuredDestinations = [
-  {
-    id: 1,
-    name: "Azores, Portugal",
-    country: "Portugal",
-    image: "/placeholder-azores.jpg",
-    crowdLevel: 25, // percentage of capacity
-    priceRange: "$$",
-    highlights: ["Volcanic landscapes", "Hot springs", "Hiking trails"],
-    bestMonths: ["Apr", "May", "Sep", "Oct"],
-    averageCost: 1200,
-  },
-  {
-    id: 2,
-    name: "Faroe Islands",
-    country: "Denmark",
-    image: "/placeholder-faroe.jpg",
-    crowdLevel: 15,
-    priceRange: "$$$",
-    highlights: ["Dramatic cliffs", "Northern lights", "Grass-roof houses"],
-    bestMonths: ["Jun", "Jul", "Aug"],
-    averageCost: 1800,
-  },
-  {
-    id: 3,
-    name: "Estonian Islands",
-    country: "Estonia",
-    image: "/placeholder-estonia.jpg",
-    crowdLevel: 20,
-    priceRange: "$",
-    highlights: ["Medieval castles", "Pristine beaches", "Local culture"],
-    bestMonths: ["May", "Jun", "Sep"],
-    averageCost: 800,
-  },
-];
+// Enhanced destination interface with crowd data integration
+interface EnhancedDestination {
+  id: number;
+  name: string;
+  country: string;
+  image: string;
+  crowdLevel: number;
+  priceRange: string;
+  highlights: string[];
+  bestMonths: string[];
+  averageCost: number;
+  crowdData?: DestinationCrowdData;
+  currentMonthCrowd?: number;
+  crowdTrend?: 'increasing' | 'decreasing' | 'stable';
+}
 
 interface SearchFilters {
   destination: string;
@@ -56,6 +37,110 @@ export default function Home() {
   });
 
   const [isSearching, setIsSearching] = useState(false);
+  const [featuredDestinations, setFeaturedDestinations] = useState<EnhancedDestination[]>([]);
+  const [currentMonth] = useState(new Date().getMonth() + 1);
+
+  // Initialize destinations with real crowd data
+  useEffect(() => {
+    const initializeDestinations = () => {
+      const baseDestinations = [
+        {
+          id: 1,
+          name: "Azores, Portugal",
+          country: "Portugal",
+          image: "/placeholder-azores.jpg",
+          priceRange: "$$",
+          highlights: ["Volcanic landscapes", "Hot springs", "Hiking trails"],
+          averageCost: 1200,
+        },
+        {
+          id: 2,
+          name: "Faroe Islands",
+          country: "Denmark",
+          image: "/placeholder-faroe.jpg",
+          priceRange: "$$$",
+          highlights: ["Dramatic cliffs", "Northern lights", "Grass-roof houses"],
+          averageCost: 1800,
+        },
+        {
+          id: 3,
+          name: "Estonian Islands",
+          country: "Estonia",
+          image: "/placeholder-estonia.jpg",
+          priceRange: "$",
+          highlights: ["Medieval castles", "Pristine beaches", "Local culture"],
+          averageCost: 800,
+        },
+        {
+          id: 4,
+          name: "Saguenay Fjord",
+          country: "Canada",
+          image: "/placeholder-saguenay.jpg",
+          priceRange: "$$",
+          highlights: ["Whale watching", "Fjord landscapes", "Wildlife"],
+          averageCost: 1500,
+        },
+        {
+          id: 5,
+          name: "Raja Ampat",
+          country: "Indonesia",
+          image: "/placeholder-raja-ampat.jpg",
+          priceRange: "$$$",
+          highlights: ["Marine biodiversity", "Diving", "Pristine coral reefs"],
+          averageCost: 2000,
+        },
+        {
+          id: 6,
+          name: "North Macedonia",
+          country: "North Macedonia",
+          image: "/placeholder-macedonia.jpg",
+          priceRange: "$",
+          highlights: ["Lake Ohrid", "Ancient culture", "Mountain landscapes"],
+          averageCost: 700,
+        }
+      ];
+
+      const enhancedDestinations: EnhancedDestination[] = baseDestinations.map(dest => {
+        // Extract destination name for crowd data lookup
+        const destName = dest.name.split(',')[0];
+        const crowdData = CrowdDataService.getDestinationData(destName);
+        const currentMonthData = CrowdDataService.getMonthlyData(destName, currentMonth);
+        
+        // Calculate crowd trend
+        let crowdTrend: 'increasing' | 'decreasing' | 'stable' = 'stable';
+        if (crowdData) {
+          const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+          const nextMonth = currentMonth === 12 ? 1 : currentMonth + 1;
+          const prevMonthData = CrowdDataService.getMonthlyData(destName, prevMonth);
+          const nextMonthData = CrowdDataService.getMonthlyData(destName, nextMonth);
+          
+          if (prevMonthData && nextMonthData && currentMonthData) {
+            const avgPrevNext = (prevMonthData.crowdLevel + nextMonthData.crowdLevel) / 2;
+            if (currentMonthData.crowdLevel > avgPrevNext + 5) {
+              crowdTrend = 'increasing';
+            } else if (currentMonthData.crowdLevel < avgPrevNext - 5) {
+              crowdTrend = 'decreasing';
+            }
+          }
+        }
+
+        const bestTimeData = CrowdDataService.getBestTimeToVisit(destName);
+        
+        return {
+          ...dest,
+          crowdLevel: currentMonthData?.crowdLevel || crowdData?.averageCrowdLevel || 25,
+          bestMonths: bestTimeData?.bestMonths.map(m => m.slice(0, 3)) || ["Apr", "May", "Sep"],
+          crowdData: crowdData || undefined,
+          currentMonthCrowd: currentMonthData?.crowdLevel,
+          crowdTrend
+        };
+      });
+
+      setFeaturedDestinations(enhancedDestinations);
+    };
+
+    initializeDestinations();
+  }, [currentMonth]);
 
   const handleSearch = async () => {
     setIsSearching(true);
@@ -83,6 +168,22 @@ export default function Home() {
     if (level <= 30) return 'Low crowds';
     if (level <= 60) return 'Moderate crowds';
     return 'High crowds';
+  };
+
+  const getTrendIcon = (trend?: 'increasing' | 'decreasing' | 'stable') => {
+    switch (trend) {
+      case 'increasing': return '📈';
+      case 'decreasing': return '📉';
+      default: return '📊';
+    }
+  };
+
+  const getTrendColor = (trend?: 'increasing' | 'decreasing' | 'stable') => {
+    switch (trend) {
+      case 'increasing': return 'text-red-500';
+      case 'decreasing': return 'text-green-500';
+      default: return 'text-blue-500';
+    }
   };
 
   return (
@@ -203,104 +304,108 @@ export default function Home() {
             </div>
           </div>
 
-          <button
-            onClick={handleSearch}
-            disabled={isSearching}
-            className="w-full md:w-auto mt-6 bg-indigo-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50"
-          >
-            {isSearching ? 'Searching...' : 'Find Destinations'}
-          </button>
+          {/* Search Button */}
+          <div className="mt-6 text-center">
+            <button
+              onClick={handleSearch}
+              disabled={isSearching}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-lg font-semibold text-lg shadow-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSearching ? 'Searching...' : 'Find My Perfect Destination'}
+            </button>
+          </div>
         </div>
 
+        {/* Live Crowd Intelligence Dashboard with Foursquare Data */}
+        <LiveCrowdDashboard />
+
         {/* Featured Destinations */}
-        <section>
-          <h2 className="text-3xl font-bold text-gray-900 mb-8">Featured Uncrowded Destinations</h2>
+        <div className="mb-12">
+          <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">
+            Featured Uncrowded Destinations
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {featuredDestinations.map((destination) => (
-              <div key={destination.id} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow">
-                {/* Image placeholder */}
-                <div className="h-48 bg-gradient-to-br from-blue-400 to-purple-500 relative">
-                  <div className="absolute inset-0 bg-black bg-opacity-20"></div>
+              <div key={destination.id} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300">
+                <div className="relative">
+                  <div className="h-48 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+                  <div className="absolute top-4 left-4">
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getCrowdLevelColor(destination.crowdLevel)}`}>
+                      {destination.crowdLevel}% crowds
+                    </span>
+                  </div>
                   <div className="absolute top-4 right-4">
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getCrowdLevelColor(destination.crowdLevel)}`}>
-                      {getCrowdLevelText(destination.crowdLevel)}
+                    <span className={`text-2xl ${getTrendColor(destination.crowdTrend)}`}>
+                      {getTrendIcon(destination.crowdTrend)}
                     </span>
                   </div>
                 </div>
-
+                
                 <div className="p-6">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h3 className="text-xl font-bold text-gray-900">{destination.name}</h3>
-                      <p className="text-gray-600">{destination.country}</p>
-                    </div>
-                    <span className="text-lg font-bold text-indigo-600">{destination.priceRange}</span>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-700 mb-1">Highlights</h4>
-                      <div className="flex flex-wrap gap-1">
-                        {destination.highlights.slice(0, 2).map((highlight, index) => (
-                          <span key={index} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
-                            {highlight}
-                          </span>
-                        ))}
-                        {destination.highlights.length > 2 && (
-                          <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
-                            +{destination.highlights.length - 2} more
-                          </span>
-                        )}
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">{destination.name}</h3>
+                  <p className="text-gray-600 mb-4">{destination.country}</p>
+                  
+                  {/* Crowd Analytics */}
+                  {destination.crowdData && (
+                    <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                      <div className="text-sm text-gray-600 mb-1">
+                        <strong>Best months:</strong> {destination.bestMonths.join(', ')}
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        <strong>Annual average:</strong> {destination.crowdData.averageCrowdLevel}% crowds
                       </div>
                     </div>
-
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <span className="text-sm text-gray-600">Best months: </span>
-                        <span className="text-sm font-medium">{destination.bestMonths.join(', ')}</span>
+                  )}
+                  
+                  <div className="space-y-2 mb-4">
+                    {destination.highlights.map((highlight, index) => (
+                      <div key={index} className="flex items-center text-sm text-gray-600">
+                        <span className="w-2 h-2 bg-indigo-500 rounded-full mr-2"></span>
+                        {highlight}
                       </div>
-                      <span className="text-lg font-bold text-gray-900">${destination.averageCost}</span>
-                    </div>
+                    ))}
                   </div>
-
-                  <button className="w-full mt-4 bg-indigo-600 text-white py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors">
-                    View Details
-                  </button>
+                  
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-2xl font-bold text-gray-900">${destination.averageCost}</span>
+                      <span className="text-gray-600">/week</span>
+                    </div>
+                    <span className="text-lg font-semibold text-gray-600">{destination.priceRange}</span>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
-        </section>
+        </div>
 
-        {/* Value Proposition */}
-        <section className="mt-16 text-center">
-          <h2 className="text-3xl font-bold text-gray-900 mb-8">Why Choose TravelSmart?</h2>
+        {/* Why Choose Uncrowded Travel */}
+        <div className="bg-white rounded-2xl shadow-xl p-8 mb-12">
+          <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">Why Choose Uncrowded Travel?</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-white p-6 rounded-xl shadow-lg">
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <span className="text-green-600 text-2xl">📊</span>
+            <div className="text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">🌿</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Real-time Crowd Data</h3>
-              <p className="text-gray-600">Get live updates on crowd levels at popular destinations to avoid the masses.</p>
+              <h3 className="text-xl font-semibold mb-2">Authentic Experiences</h3>
+              <p className="text-gray-600">Connect with local culture and enjoy genuine interactions without tourist crowds.</p>
             </div>
-            
-            <div className="bg-white p-6 rounded-xl shadow-lg">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <span className="text-blue-600 text-2xl">💰</span>
+            <div className="text-center">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">💰</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Budget Optimization</h3>
-              <p className="text-gray-600">Find amazing destinations that fit your budget without compromising on experience.</p>
+              <h3 className="text-xl font-semibold mb-2">Better Value</h3>
+              <p className="text-gray-600">Lower prices, better service, and more availability when you avoid peak seasons.</p>
             </div>
-            
-            <div className="bg-white p-6 rounded-xl shadow-lg">
-              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <span className="text-purple-600 text-2xl">⚡</span>
+            <div className="text-center">
+              <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">📸</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Quick Planning</h3>
-              <p className="text-gray-600">Plan your perfect trip in under 10 minutes with our smart recommendations.</p>
+              <h3 className="text-xl font-semibold mb-2">Perfect Photos</h3>
+              <p className="text-gray-600">Capture stunning shots without crowds in the background or long waits for the perfect angle.</p>
             </div>
           </div>
-        </section>
+        </div>
       </section>
     </div>
   );
